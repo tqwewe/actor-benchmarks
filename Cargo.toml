@@ -1,0 +1,36 @@
+[package]
+name = "actor_benchmarks"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+actix = "0.13"
+async-trait = "0.1"
+coerce = "0.8"
+kameo = "0.14"
+ractor = "0.14"
+tokio = { version = "1", features = ["full"] }
+xtra = { version = "0.6.0", features = ["tokio", "macros"] }
+
+[dev-dependencies]
+criterion = { version = "0.4", features = ["async_tokio"] }
+
+[[bench]]
+name = "actix"
+harness = false
+
+[[bench]]
+name = "coerce"
+harness = false
+
+[[bench]]
+name = "kameo"
+harness = false
+
+[[bench]]
+name = "ractor"
+harness = false
+
+[[bench]]
+name = "xtra"
+harness = false
