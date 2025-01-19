@@ -62,8 +62,8 @@ To reproduce the benchmarks:
 
 1. **Clone the Repository**
    ```bash
-   git clone https://github.com/tqwewe/actor_benchmarks.git
-   cd actor_benchmarks
+   git clone https://github.com/tqwewe/actor-benchmarks.git
+   cd actor-benchmarks
    ```
 
 2. **Install Rust** (if not already installed)
