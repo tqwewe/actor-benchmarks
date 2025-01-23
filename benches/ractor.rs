@@ -1,8 +1,11 @@
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use ractor::{Actor, ActorProcessingErr, ActorRef, RpcReplyPort};
-use tokio::runtime::Runtime;
+use tokio::{
+    runtime::Runtime,
+    sync::{OwnedSemaphorePermit, Semaphore},
+};
 
 struct UnboundedCounter;
 
@@ -35,6 +38,8 @@ impl Actor for UnboundedCounter {
 
 struct Inc {
     amount: i64,
+    #[allow(dead_code)]
+    permit: Option<OwnedSemaphorePermit>,
     reply: Option<RpcReplyPort<i64>>,
 }
 
@@ -51,6 +56,7 @@ fn benchmark_tell_unbounded(c: &mut Criterion) {
                     .call(
                         |tx| Inc {
                             amount: 0,
+                            permit: None,
                             reply: Some(tx),
                         },
                         None,
@@ -60,17 +66,26 @@ fn benchmark_tell_unbounded(c: &mut Criterion) {
                 actor_refs.push(actor_ref);
             }
 
+            let semaphore = Arc::new(Semaphore::new(iters.try_into().unwrap()));
+            let permits = (0..iters).map(|_| semaphore.clone().try_acquire_owned().unwrap());
+
             let start = Instant::now();
 
-            for i in 0..iters {
-                let actor_ref = &actor_refs[i as usize % num_actors];
+            for (i, permit) in permits.into_iter().enumerate() {
+                let actor_ref = &actor_refs[i % num_actors];
                 actor_ref
                     .cast(Inc {
                         amount: 1,
+                        permit: Some(permit),
                         reply: None,
                     })
                     .unwrap();
             }
+
+            let _ = semaphore
+                .acquire_many(iters.try_into().unwrap())
+                .await
+                .unwrap();
 
             start.elapsed()
         })

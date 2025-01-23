@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use kameo::{
@@ -6,7 +6,10 @@ use kameo::{
     request::MessageSend,
     Actor,
 };
-use tokio::runtime::Runtime;
+use tokio::{
+    runtime::Runtime,
+    sync::{OwnedSemaphorePermit, Semaphore},
+};
 
 #[derive(Actor)]
 #[actor(mailbox = unbounded)]
@@ -22,6 +25,8 @@ struct BoundedCounter {
 
 struct Inc {
     amount: i64,
+    #[allow(dead_code)]
+    permit: Option<OwnedSemaphorePermit>,
 }
 
 impl Message<Inc> for UnboundedCounter {
@@ -51,16 +56,37 @@ fn benchmark_tell_unbounded(c: &mut Criterion) {
             let mut actor_refs = Vec::with_capacity(num_actors);
             for _ in 0..num_actors {
                 let actor_ref = kameo::spawn(UnboundedCounter { count: 0 });
-                actor_ref.ask(Inc { amount: 0 }).await.unwrap();
+                actor_ref
+                    .ask(Inc {
+                        amount: 0,
+                        permit: None,
+                    })
+                    .await
+                    .unwrap();
                 actor_refs.push(actor_ref);
             }
 
+            let semaphore = Arc::new(Semaphore::new(iters.try_into().unwrap()));
+            let permits = (0..iters).map(|_| semaphore.clone().try_acquire_owned().unwrap());
+
             let start = Instant::now();
 
-            for i in 0..iters {
-                let actor_ref = &actor_refs[i as usize % num_actors];
-                actor_ref.tell(Inc { amount: 1 }).send().await.unwrap();
+            for (i, permit) in permits.into_iter().enumerate() {
+                let actor_ref = &actor_refs[i % num_actors];
+                actor_ref
+                    .tell(Inc {
+                        amount: 1,
+                        permit: Some(permit),
+                    })
+                    .send()
+                    .await
+                    .unwrap();
             }
+
+            let _ = semaphore
+                .acquire_many(iters.try_into().unwrap())
+                .await
+                .unwrap();
 
             start.elapsed()
         })
@@ -79,12 +105,27 @@ fn benchmark_tell_bounded(c: &mut Criterion) {
                 actor_refs.push(actor_ref);
             }
 
+            let semaphore = Arc::new(Semaphore::new(iters.try_into().unwrap()));
+            let permits = (0..iters).map(|_| semaphore.clone().try_acquire_owned().unwrap());
+
             let start = Instant::now();
 
-            for i in 0..iters {
-                let actor_ref = &actor_refs[i as usize % num_actors];
-                actor_ref.tell(Inc { amount: 1 }).send().await.unwrap();
+            for (i, permit) in permits.into_iter().enumerate() {
+                let actor_ref = &actor_refs[i % num_actors];
+                actor_ref
+                    .tell(Inc {
+                        amount: 1,
+                        permit: Some(permit),
+                    })
+                    .send()
+                    .await
+                    .unwrap();
             }
+
+            let _ = semaphore
+                .acquire_many(iters.try_into().unwrap())
+                .await
+                .unwrap();
 
             start.elapsed()
         })

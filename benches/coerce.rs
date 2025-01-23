@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 
 use coerce::actor::{
     context::ActorContext,
@@ -7,7 +7,10 @@ use coerce::actor::{
     Actor, IntoActor,
 };
 use criterion::{criterion_group, criterion_main, Criterion};
-use tokio::runtime::Runtime;
+use tokio::{
+    runtime::Runtime,
+    sync::{OwnedSemaphorePermit, Semaphore},
+};
 
 struct UnboundedCounter {
     count: i64,
@@ -17,6 +20,8 @@ impl Actor for UnboundedCounter {}
 
 struct Inc {
     amount: i64,
+    #[allow(dead_code)]
+    permit: Option<OwnedSemaphorePermit>,
 }
 
 impl Message for Inc {
@@ -44,16 +49,35 @@ fn benchmark_tell_unbounded(c: &mut Criterion) {
                     .into_actor::<&'static str>(None, &sys)
                     .await
                     .unwrap();
-                actor_ref.send(Inc { amount: 0 }).await.unwrap();
+                actor_ref
+                    .send(Inc {
+                        amount: 0,
+                        permit: None,
+                    })
+                    .await
+                    .unwrap();
                 actor_refs.push(actor_ref);
             }
 
+            let semaphore = Arc::new(Semaphore::new(iters.try_into().unwrap()));
+            let permits = (0..iters).map(|_| semaphore.clone().try_acquire_owned().unwrap());
+
             let start = Instant::now();
 
-            for i in 0..iters {
-                let actor_ref = &actor_refs[i as usize % num_actors];
-                actor_ref.notify(Inc { amount: 1 }).unwrap();
+            for (i, permit) in permits.into_iter().enumerate() {
+                let actor_ref = &actor_refs[i % num_actors];
+                actor_ref
+                    .notify(Inc {
+                        amount: 1,
+                        permit: Some(permit),
+                    })
+                    .unwrap();
             }
+
+            let _ = semaphore
+                .acquire_many(iters.try_into().unwrap())
+                .await
+                .unwrap();
 
             start.elapsed()
         })

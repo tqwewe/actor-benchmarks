@@ -1,7 +1,8 @@
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 
 use actix::{Actor, Context, Handler, Message, System, SystemRunner};
 use criterion::{async_executor::AsyncExecutor, criterion_group, criterion_main, Criterion};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 struct ActixRuntime(SystemRunner);
 
@@ -27,6 +28,8 @@ impl Actor for BoundedCounter {
 #[rtype(result = "i64")]
 struct Inc {
     amount: i64,
+    #[allow(dead_code)]
+    permit: Option<OwnedSemaphorePermit>,
 }
 
 impl Handler<Inc> for BoundedCounter {
@@ -47,16 +50,35 @@ fn benchmark_tell_bounded(c: &mut Criterion) {
             let mut actor_refs = Vec::with_capacity(num_actors);
             for _ in 0..num_actors {
                 let actor_ref = BoundedCounter { count: 0 }.start();
-                actor_ref.send(Inc { amount: 0 }).await.unwrap();
+                actor_ref
+                    .send(Inc {
+                        amount: 0,
+                        permit: None,
+                    })
+                    .await
+                    .unwrap();
                 actor_refs.push(actor_ref);
             }
 
+            let semaphore = Arc::new(Semaphore::new(iters.try_into().unwrap()));
+            let permits = (0..iters).map(|_| semaphore.clone().try_acquire_owned().unwrap());
+
             let start = Instant::now();
 
-            for i in 0..iters {
-                let actor_ref = &actor_refs[i as usize % num_actors];
-                actor_ref.try_send(Inc { amount: 1 }).unwrap();
+            for (i, permit) in permits.into_iter().enumerate() {
+                let actor_ref = &actor_refs[i % num_actors];
+                actor_ref
+                    .try_send(Inc {
+                        amount: 1,
+                        permit: Some(permit),
+                    })
+                    .unwrap();
             }
+
+            let _ = semaphore
+                .acquire_many(iters.try_into().unwrap())
+                .await
+                .unwrap();
 
             start.elapsed()
         })
