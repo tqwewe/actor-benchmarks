@@ -31,7 +31,7 @@ Additionally, a detailed feature comparison table is included to highlight the c
 | Tell Requests (Fire and Forget)|     ✅    |     ✅     |     ✅    |     ✅     |     ✅                                  |
 | Supervision                    |     ✅    |     ✅     |     ✅    |     ✅     |     ❌                                  |
 | Distributed Actors             |     ❌    |     ✅     |     ✅    |     ✅     |     ❌                                  |
-| Runtime Used                   |   Actix   |   Tokio    |   Tokio   |   Tokio    | Async Std / Smol / Tokio / wasm-bindgen |
+| Runtime Used                   |   Actix   |   Tokio    |   Tokio   |   Async Std / Tokio    | Async Std / Smol / Tokio / wasm-bindgen |
 | Latest Release                 |  Jun, 2024 |  Oct, 2023 |  Jan, 2025 |  Jan, 2025 |  Feb, 2024                              |
 
 ## Benchmarked Libraries
